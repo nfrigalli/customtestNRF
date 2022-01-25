@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "boards.h": "c"
+        "boards.h": "c",
+        "ble_srv_common.h": "c",
+        "ble.h": "c",
+        "string.h": "c"
     }
 }
