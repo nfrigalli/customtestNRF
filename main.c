@@ -76,11 +76,14 @@
 #include "nrf_ble_gatt.h"
 #include "nrf_ble_qwr.h"
 #include "nrf_pwr_mgmt.h"
+#include "nrf_drv_saadc.h"
 
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
 #include "nrf_log_default_backends.h"
 #include "ble_cus.h"
+#include "ble_bas.h"
+#include "battery.h"
 
 #define DEVICE_NAME                     "Custom"                       /**< Name of device. Will be included in the advertising data. */
 #define MANUFACTURER_NAME               "Cus"                   /**< Manufacturer. Will be passed to Device Information Service. */
@@ -113,6 +116,12 @@
 #define DEAD_BEEF                       0xDEADBEEF                              /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
 
+/// BAS stuff, TODO move later if possible to separate files
+static nrf_saadc_value_t adc_buf[2];
+static void on_bas_evt(ble_bas_t * p_bas, ble_bas_evt_t * p_evt);
+APP_TIMER_DEF(m_battery_timer_id);                      /**< Battery measurement timer. */
+
+BLE_BAS_DEF(m_bas);
 NRF_BLE_GATT_DEF(m_gatt);
 NRF_BLE_QWR_DEF(m_qwr);                                                         /**< GATT module instance. */
 BLE_CUS_DEF(m_cus);                                                             /**< Context for the Queued Write module.*/
@@ -127,6 +136,8 @@ static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID;                        
 /* YOUR_JOB: Declare all services structure your application is using
  *  BLE_XYZ_DEF(m_xyz);
  */
+
+
 
 // YOUR_JOB: Use UUIDs for service(s) used in your application.
 static ble_uuid_t m_adv_uuids[] =                                               /**< Universally unique service identifiers. */
@@ -153,6 +164,134 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 {
     app_error_handler(DEAD_BEEF, line_num, p_file_name);
 }
+
+///// BAS
+
+/**@brief Function for configuring ADC to do battery level conversion.
+ */
+static void adc_configure(void)
+{
+    ret_code_t err_code = nrf_drv_saadc_init(NULL, saadc_event_handler);
+    APP_ERROR_CHECK(err_code);
+
+    nrf_saadc_channel_config_t config =
+        NRF_DRV_SAADC_DEFAULT_CHANNEL_CONFIG_SE(NRF_SAADC_INPUT_VDD);
+    err_code = nrf_drv_saadc_channel_init(0, &config);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_drv_saadc_buffer_convert(&adc_buf[0], 1);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = nrf_drv_saadc_buffer_convert(&adc_buf[1], 1);
+    APP_ERROR_CHECK(err_code);
+}
+
+/**@brief Function for initializing the Battery Service.
+ */
+static void bas_init(void)
+{
+    ret_code_t     err_code;
+    ble_bas_init_t bas_init_obj;
+
+    memset(&bas_init_obj, 0, sizeof(bas_init_obj));
+
+    bas_init_obj.evt_handler          = on_bas_evt;
+    bas_init_obj.support_notification = true;
+    bas_init_obj.p_report_ref         = NULL;
+    bas_init_obj.initial_batt_level   = 100;
+
+    bas_init_obj.bl_rd_sec        = SEC_OPEN;
+    bas_init_obj.bl_cccd_wr_sec   = SEC_OPEN;
+    bas_init_obj.bl_report_rd_sec = SEC_OPEN;
+
+    err_code = ble_bas_init(&m_bas, &bas_init_obj);
+    APP_ERROR_CHECK(err_code);
+}
+
+/**@brief Function for handling the ADC interrupt.
+ *
+ * @details  This function will fetch the conversion result from the ADC, convert the value into
+ *           percentage and send it to peer.
+ */
+void saadc_event_handler(nrf_drv_saadc_evt_t const * p_event)
+{
+    if (p_event->type == NRF_DRV_SAADC_EVT_DONE)
+    {
+        nrf_saadc_value_t adc_result;
+        uint16_t          batt_lvl_in_milli_volts;
+        uint8_t           percentage_batt_lvl;
+        uint32_t          err_code;
+
+        adc_result = p_event->data.done.p_buffer[0];
+
+        err_code = nrf_drv_saadc_buffer_convert(p_event->data.done.p_buffer, 1);
+        APP_ERROR_CHECK(err_code);
+
+        batt_lvl_in_milli_volts = ADC_RESULT_IN_MILLI_VOLTS(adc_result) +
+                                  DIODE_FWD_VOLT_DROP_MILLIVOLTS;
+        percentage_batt_lvl = battery_level_in_percent(batt_lvl_in_milli_volts);
+
+        err_code = ble_bas_battery_level_update(&m_bas, percentage_batt_lvl, BLE_CONN_HANDLE_ALL);
+        if ((err_code != NRF_SUCCESS) &&
+            (err_code != NRF_ERROR_INVALID_STATE) &&
+            (err_code != NRF_ERROR_BUSY) &&
+            (err_code != BLE_ERROR_GATTS_SYS_ATTR_MISSING)
+           )
+        {
+            APP_ERROR_HANDLER(err_code);
+        }
+    }
+}
+
+/**@brief Function for handling the Battery Service events.
+ *
+ * @details This function will be called for all Battery Service events which are passed to the
+ |          application.
+ *
+ * @param[in] p_bas  Battery Service structure.
+ * @param[in] p_evt  Event received from the Battery Service.
+ */
+static void on_bas_evt(ble_bas_t * p_bas, ble_bas_evt_t * p_evt)
+{
+    ret_code_t err_code;
+
+    switch (p_evt->evt_type)
+    {
+        case BLE_BAS_EVT_NOTIFICATION_ENABLED:
+            // Start battery timer
+            err_code = app_timer_start(m_battery_timer_id, BATTERY_LEVEL_MEAS_INTERVAL, NULL);
+            APP_ERROR_CHECK(err_code);
+            break; // BLE_BAS_EVT_NOTIFICATION_ENABLED
+
+        case BLE_BAS_EVT_NOTIFICATION_DISABLED:
+            err_code = app_timer_stop(m_battery_timer_id);
+            APP_ERROR_CHECK(err_code);
+            break; // BLE_BAS_EVT_NOTIFICATION_DISABLED
+
+        default:
+            // No implementation needed.
+            break;
+    }
+}
+
+/**@brief Function for handling the Battery measurement timer timeout.
+ *
+ * @details This function will be called each time the battery level measurement timer expires.
+ *          This function will start the ADC.
+ *
+ * @param[in] p_context   Pointer used for passing some arbitrary information (context) from the
+ *                        app_start_timer() call to the timeout handler.
+ */
+static void battery_level_meas_timeout_handler(void * p_context)
+{
+    UNUSED_PARAMETER(p_context);
+
+    ret_code_t err_code;
+    err_code = nrf_drv_saadc_sample();
+    APP_ERROR_CHECK(err_code);
+}
+
+///// END_BAS
 
 
 /**@brief Function for handling Peer Manager events.
@@ -285,6 +424,8 @@ static void timers_init(void)
     err_code = app_timer_create(&m_notification_timer_id, APP_TIMER_MODE_REPEATED, notification_timeout_handler);
     APP_ERROR_CHECK(err_code);
 
+    err_code = app_timer_create(&m_battery_timer_id, APP_TIMER_MODE_REPEATED, battery_level_meas_timeout_handler);
+    APP_ERROR_CHECK(err_code);
     /* YOUR_JOB: Create any timers to be used by the application.
                  Below is an example of how to create a timer.
                  For every new timer needed, increase the value of the macro APP_TIMER_MAX_TIMERS by
@@ -423,14 +564,14 @@ static void services_init(void)
         ret_code_t          err_code;
         nrf_ble_qwr_init_t  qwr_init = {0};
         ble_cus_init_t      cus_init = {0};
-
+        
         // Initialize Queued Write Module.
         qwr_init.error_handler = nrf_qwr_error_handler;
 
         err_code = nrf_ble_qwr_init(&m_qwr, &qwr_init);
         APP_ERROR_CHECK(err_code);
 
-         // Initialize CUS Service init structure to zero.
+        // Initialize CUS Service init structure to zero.
         cus_init.evt_handler                = on_cus_evt;
     
         BLE_GAP_CONN_SEC_MODE_SET_OPEN(&cus_init.custom_value_char_attr_md.cccd_write_perm);
@@ -439,7 +580,9 @@ static void services_init(void)
     
         err_code = ble_cus_init(&m_cus, &cus_init);
         APP_ERROR_CHECK(err_code);
-                
+        
+        bas_init(); //inconsistent with cus
+
     /* YOUR_JOB: Add code to initialize the services used by the application.
        ble_xxs_init_t                     xxs_init;
        ble_yys_init_t                     yys_init;
@@ -713,7 +856,6 @@ static void delete_bonds(void)
     APP_ERROR_CHECK(err_code);
 }
 
-
 /**@brief Function for handling events from the BSP module.
  *
  * @param[in]   event   Event generated when button is pressed.
@@ -865,6 +1007,7 @@ int main(void)
     buttons_leds_init(&erase_bonds);
     power_management_init();
     ble_stack_init();
+    adc_configure();
     gap_params_init();
     gatt_init();
     services_init();
@@ -884,6 +1027,8 @@ int main(void)
         idle_state_handle();
     }
 }
+
+
 
 
 /**

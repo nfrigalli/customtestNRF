@@ -3,6 +3,11 @@
         "boards.h": "c",
         "ble_srv_common.h": "c",
         "ble.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "es_battery_voltage.h": "c",
+        "nrf_drv_saadc.h": "c",
+        "nrf_saadc.h": "c",
+        "nrf_pwr_mgmt.h": "c",
+        "nrfx_saadc.h": "c"
     }
 }
