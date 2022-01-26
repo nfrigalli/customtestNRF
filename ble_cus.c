@@ -232,8 +232,10 @@ uint32_t ble_cus_init(ble_cus_t * p_cus, const ble_cus_init_t * p_cus_init)
 uint32_t ble_cus_custom_value_update(ble_cus_t * p_cus, uint8_t custom_value)
 {
     uint8_t custom_array[50];
+    memset(custom_array,50,sizeof(u_int8_t));
     custom_array[0]=custom_value;
     custom_array[1]=custom_value*2;
+    custom_array[21]=custom_value*3;
 
     NRF_LOG_INFO("In ble_cus_custom_value_update. \r\n"); 
     if (p_cus == NULL)
@@ -250,12 +252,6 @@ uint32_t ble_cus_custom_value_update(ble_cus_t * p_cus, uint8_t custom_value)
     gatts_value.len     = 50*sizeof(uint8_t);
     gatts_value.offset  = 0;
     gatts_value.p_value = custom_array;
-
-    for (size_t i = 0; i < gatts_value.len ; i++)
-    {
-        /* code */
-    }
-    
 
     // Update database.
     err_code = sd_ble_gatts_value_set(p_cus->conn_handle,

@@ -307,6 +307,12 @@ $(foreach target, $(TARGETS), $(call define_target, $(target)))
 # Flash the program
 flash: default
 	@echo Flashing: $(OUTPUT_DIRECTORY)/nrf52840_xxaa.hex
+	arm-none-eabi-gdb --batch -ex 'target extended-remote /dev/ttyBmpGdb' -ex 'monitor swdp_scan' -ex 'attach 1'  -ex 'load _build/nrf52840_xxaa.hex'  -ex 'mon hard_srst' -ex 'detach' -ex 'quit'
+
+
+# Flash the everything
+flash_all: default
+	@echo Flashing: $(OUTPUT_DIRECTORY)/nrf52840_xxaa.hex
 	arm-none-eabi-gdb --batch -ex 'target extended-remote /dev/ttyBmpGdb' -ex 'monitor swdp_scan' -ex 'attach 1' -ex 'mon erase_mass' -ex 'load ../../../../../../components/softdevice/s140/hex/s140_nrf52_7.2.0_softdevice.hex'  -ex 'load _build/nrf52840_xxaa.hex'  -ex 'mon hard_srst' -ex 'detach' -ex 'quit'
 
 
