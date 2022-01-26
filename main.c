@@ -99,7 +99,7 @@
 #define NEXT_CONN_PARAMS_UPDATE_DELAY   APP_TIMER_TICKS(30000)                  /**< Time between each call to sd_ble_gap_conn_param_update after the first call (30 seconds). */
 #define MAX_CONN_PARAMS_UPDATE_COUNT    3                                       /**< Number of attempts before giving up the connection parameter negotiation. */
 
-#define NOTIFICATION_INTERVAL           APP_TIMER_TICKS(1000)     
+#define NOTIFICATION_INTERVAL           APP_TIMER_TICKS(5000)     
 
 #define SEC_PARAM_BOND                  1                                       /**< Perform bonding. */
 #define SEC_PARAM_MITM                  0                                       /**< Man In The Middle protection not required. */
@@ -264,7 +264,7 @@ static void notification_timeout_handler(void * p_context)
     UNUSED_PARAMETER(p_context);
     ret_code_t err_code;
     
-    // Increment the value of m_custom_value before nortifing it.
+    // Increment the value of m_custom_value before notifying it.
     m_custom_value++;
     
     err_code = ble_cus_custom_value_update(&m_cus, m_custom_value);

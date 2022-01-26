@@ -39,7 +39,8 @@ static void on_disconnect(ble_cus_t * p_cus, ble_evt_t const * p_ble_evt)
     p_cus->evt_handler(p_cus, &evt);
 }
 
-/**@brief Function for handling the Write event.
+//Not actually required so can be deleted
+/**@brief Function for handling the Write event. 
  *
  * @param[in]   p_cus       Custom Service structure.
  * @param[in]   p_ble_evt   Event received from the BLE stack.
@@ -156,7 +157,7 @@ static uint32_t custom_value_char_add(ble_cus_t * p_cus, const ble_cus_init_t * 
     memset(&char_md, 0, sizeof(char_md));
 
     char_md.char_props.read   = 1;
-    char_md.char_props.write  = 1;
+    char_md.char_props.write  = 0;
     char_md.char_props.notify = 1; 
     char_md.p_char_user_desc  = NULL;
     char_md.p_char_pf         = NULL;
@@ -180,9 +181,9 @@ static uint32_t custom_value_char_add(ble_cus_t * p_cus, const ble_cus_init_t * 
 
     attr_char_value.p_uuid    = &ble_uuid;
     attr_char_value.p_attr_md = &attr_md;
-    attr_char_value.init_len  = sizeof(uint8_t);
+    attr_char_value.init_len  = 50*sizeof(uint8_t);
     attr_char_value.init_offs = 0;
-    attr_char_value.max_len   = sizeof(uint8_t);
+    attr_char_value.max_len   = 50*sizeof(uint8_t);
 
     err_code = sd_ble_gatts_characteristic_add(p_cus->service_handle, &char_md,
                                                &attr_char_value,
@@ -230,6 +231,10 @@ uint32_t ble_cus_init(ble_cus_t * p_cus, const ble_cus_init_t * p_cus_init)
 
 uint32_t ble_cus_custom_value_update(ble_cus_t * p_cus, uint8_t custom_value)
 {
+    uint8_t custom_array[50];
+    custom_array[0]=custom_value;
+    custom_array[1]=custom_value*2;
+
     NRF_LOG_INFO("In ble_cus_custom_value_update. \r\n"); 
     if (p_cus == NULL)
     {
@@ -242,9 +247,15 @@ uint32_t ble_cus_custom_value_update(ble_cus_t * p_cus, uint8_t custom_value)
     // Initialize value struct.
     memset(&gatts_value, 0, sizeof(gatts_value));
 
-    gatts_value.len     = sizeof(uint8_t);
+    gatts_value.len     = 50*sizeof(uint8_t);
     gatts_value.offset  = 0;
-    gatts_value.p_value = &custom_value;
+    gatts_value.p_value = custom_array;
+
+    for (size_t i = 0; i < gatts_value.len ; i++)
+    {
+        /* code */
+    }
+    
 
     // Update database.
     err_code = sd_ble_gatts_value_set(p_cus->conn_handle,
