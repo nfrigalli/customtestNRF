@@ -10,6 +10,7 @@
 #include "ble.h"
 #include "ble_bas.h"
 #include "ble_srv_common.h"
+#include "nrf_log.h"
 
 /**@brief Macro to convert the result of ADC conversion in millivolts.
  *
@@ -41,24 +42,15 @@ void saadc_event_handler(nrf_drv_saadc_evt_t const * p_event);
  * @param[in] p_context   Pointer used for passing some arbitrary information (context) from the
  *                        app_start_timer() call to the timeout handler.
  */
-static void battery_level_meas_timeout_handler(void * p_context);
+void battery_level_meas_timeout_handler(void * p_context);
 
-/**@brief Function for handling the Battery Service events.
- *
- * @details This function will be called for all Battery Service events which are passed to the
- |          application.
- *
- * @param[in] p_bas  Battery Service structure.
- * @param[in] p_evt  Event received from the Battery Service.
- */
-static void on_bas_evt(ble_bas_t * p_bas, ble_bas_evt_t * p_evt);
-
-/**@brief Function for initializing the Battery Service.
- */
-static void bas_init(void);
 
 /**@brief Function for configuring ADC to do battery level conversion.
  */
-static void adc_configure(void);
+void adc_configure(void);
+
+/**@brief Function for initializing the Battery Service.
+ */
+uint32_t service_bas_init(ble_bas_t * m_bas, const ble_bas_init_t * b_bas_init);
 
 #endif
